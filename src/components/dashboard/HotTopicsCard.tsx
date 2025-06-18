@@ -6,8 +6,32 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import WordCloud from "../WordCloud";
+import { prisma } from "@/lib/db";
 
 const HotTopicsCard = async () => {
+  const topics = await prisma.topic_count.findMany({});
+  const formattedTopics = topics.map((topic) => {
+    return {
+      text: topic.topic,
+      value: topic.count,
+    };
+  });
+  // for the testing purpose, you can use the following hardcoded topics
+  //   const topics = [
+  //     { topic: "React", count: 25 },
+  //     { topic: "TypeScript", count: 18 },
+  //     { topic: "Node.js", count: 15 },
+  //     { topic: "Next.js", count: 12 },
+  //     { topic: "Prisma", count: 10 },
+  //     { topic: "Tailwind", count: 8 },
+  //     { topic: "Redux", count: 6 },
+  //     { topic: "GraphQL", count: 5 },
+  //   ];
+  //   const formattedTopics = topics.map((topic) => ({
+  //     text: topic.topic,
+  //     value: topic.count,
+  //   }));
   return (
     <Card className="col-span-4">
       <CardHeader>
@@ -17,7 +41,7 @@ const HotTopicsCard = async () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="pl-2">
-        hot topics in the community based on quiz attempts.
+        <WordCloud formattedTopics={formattedTopics} />
       </CardContent>
     </Card>
   );
