@@ -23,13 +23,29 @@ import {
 } from "./ui/form";
 import { Button } from "./ui/button";
 import { Input } from "@/components/ui/input";
+import { useMutation } from "@tanstack/react-query";
+import axios from "axios";
+import { useRouter } from "next/navigation";
+import LoadingQuestions from "./LoadingQuestions";
 
 type Input = z.infer<typeof quizCreationSchema>;
-function onsubmit(input: Input) {
-  alert(JSON.stringify(input, null, 2));
-}
 
 const QuizCreation = () => {
+  const router = useRouter();
+  const [finished, setFinished] = React.useState(false);
+  const [showLoader, setShowLoader] = React.useState(false);
+
+  const { mutate: getQuestions, isPending } = useMutation({
+    mutationFn: async ({ amount, topic, type }: Input) => {
+      const response = await axios.post("/api/game", {
+        amount,
+        topic,
+        type,
+      });
+      return response.data;
+    },
+  });
+
   const form = useForm<Input>({
     resolver: zodResolver(quizCreationSchema),
     defaultValues: {
@@ -38,6 +54,31 @@ const QuizCreation = () => {
       type: "open-ended",
     },
   });
+
+  function onSubmit(input: Input) {
+    setShowLoader(true); // start loader
+    getQuestions(input, {
+      onSuccess: ({ gameId }) => {
+        setFinished(true);
+        setTimeout(() => {
+          if (form.getValues("type") === "mcq") {
+            router.push(`/play/mcq/${gameId}`);
+          } else {
+            router.push(`/play/open-ended/${gameId}`);
+          }
+        }, 2000); // show loader for 2s
+      },
+      onError: () => {
+        setShowLoader(false); // stop loader if error happens
+      },
+    });
+  }
+
+  form.watch();
+
+  if (showLoader) {
+    return <LoadingQuestions finished={finished} />;
+  }
 
   return (
     <div className="absolute -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2">
@@ -52,7 +93,7 @@ const QuizCreation = () => {
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onsubmit)} className="space-y-8">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               <FormField
                 control={form.control}
                 name="topic"
@@ -74,7 +115,7 @@ const QuizCreation = () => {
                 name="amount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Number of the Question </FormLabel>
+                    <FormLabel>Number of the Question</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="Enter the Number of the question"
@@ -95,7 +136,6 @@ const QuizCreation = () => {
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="type"
@@ -131,7 +171,9 @@ const QuizCreation = () => {
                   </FormItem>
                 )}
               />
-              <Button type="submit">Submit</Button>
+              <Button disabled={isPending} type="submit">
+                Submit
+              </Button>
             </form>
           </Form>
         </CardContent>

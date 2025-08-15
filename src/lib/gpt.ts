@@ -12,7 +12,7 @@ export async function strict_output(
   output_format: OutputFormat,
   default_category: string = "",
   output_value_only: boolean = false,
-  model: string = "gemini-1.5-flash",
+  model: string = "gemini-2.0-flash",
   temperature: number = 1,
   num_tries: number = 3,
   verbose: boolean = false
@@ -20,60 +20,68 @@ export async function strict_output(
   {
     question: string;
     answer: string;
+    options?: string[]; // for MCQ
   }[]
 > {
-  const list_input: boolean = Array.isArray(user_prompt);
-  const dynamic_elements: boolean = /<.*?>/.test(JSON.stringify(output_format));
-  const list_output: boolean = /\[.*?\]/.test(JSON.stringify(output_format));
+  const list_input = Array.isArray(user_prompt);
+  const dynamic_elements = /<.*?>/.test(JSON.stringify(output_format));
+  const list_output = /\[.*?\]/.test(JSON.stringify(output_format));
 
-  let error_msg: string = "";
+  let error_msg = "";
+
+  // Helper delay
+  const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
   for (let i = 0; i < num_tries; i++) {
-    let output_format_prompt: string = `\nYou are to output the following in JSON format: ${JSON.stringify(
+    let output_format_prompt = `\nYou are to output ONLY valid JSON in the format: ${JSON.stringify(
       output_format
-    )}. \nDo not put quotation marks or escape character \\ in the output fields.`;
+    )}.\nDo NOT add explanations or extra text.`;
 
     if (list_output) {
-      output_format_prompt += `\nIf output field is a list, classify output into the best element of the list.`;
+      output_format_prompt += `\nIf a field is a list, pick the best matching element.`;
     }
 
     if (dynamic_elements) {
-      output_format_prompt += `\nAny text enclosed by < and > indicates you must generate content to replace it. Example input: Go to <location>, Example output: Go to the garden\nAny output key containing < and > indicates you must generate the key name to replace it. Example input: {'<location>': 'description of location'}, Example output: {school: a place for education}`;
+      output_format_prompt += `\nReplace <placeholders> with generated content.`;
     }
 
     if (list_input) {
-      output_format_prompt += `\nGenerate a list of JSON objects, one for each user query.`;
+      output_format_prompt += `\nOutput must be a JSON array of objects.`;
     }
 
     try {
       const geminiModel = genAI.getGenerativeModel({
-        model: model,
+        model,
         systemInstruction: system_prompt + output_format_prompt + error_msg,
         generationConfig: {
-          temperature: temperature,
+          temperature,
           responseMimeType: "application/json",
         },
       });
 
-      const fullPrompt = Array.isArray(user_prompt)
+      const fullPrompt = list_input
         ? user_prompt.join("\n")
         : user_prompt.toString();
 
       const result = await geminiModel.generateContent(fullPrompt);
       const response = await result.response;
 
-      // Extract text from JSON response
       let res = "";
+
+      // Try structured output first
       try {
         const jsonResponse = await response.json();
         res = JSON.stringify(jsonResponse);
       } catch {
-        res = response.text();
+        res = await response.text();
       }
 
-      // Clean and prepare for JSON parsing
-      res = res.trim().replace(/'/g, '"');
-      res = res.replace(/(\w)"(\w)/g, "$1'$2");
+      // Clean common JSON issues
+      res = res
+        .trim()
+        .replace(/,\s*}/g, "}")
+        .replace(/,\s*]/g, "]")
+        .replace(/(\r\n|\n|\r)/gm, " ");
 
       if (verbose) {
         console.log(
@@ -81,27 +89,31 @@ export async function strict_output(
           system_prompt + output_format_prompt + error_msg
         );
         console.log("User prompt:", fullPrompt);
-        console.log("Gemini response:", res);
+        console.log("Gemini raw cleaned response:", res);
       }
 
-      let output: any = JSON.parse(res);
+      let output: any;
+      try {
+        output = JSON.parse(res);
+      } catch (parseErr) {
+        throw new Error(`Invalid JSON from Gemini: ${parseErr}`);
+      }
 
+      // Ensure array output
       if (list_input) {
         if (!Array.isArray(output)) {
-          throw new Error("Output format not in a list of JSON objects");
+          throw new Error("Output format is not an array of objects.");
         }
       } else {
         output = [output];
       }
 
+      // Validate fields + fix MCQ options
       for (let index = 0; index < output.length; index++) {
         for (const key in output_format) {
-          if (/<.*?>/.test(key)) {
-            continue;
-          }
-
+          if (/<.*?>/.test(key)) continue;
           if (!(key in output[index])) {
-            throw new Error(`${key} not in JSON output`);
+            throw new Error(`${key} missing in output`);
           }
 
           if (Array.isArray(output_format[key])) {
@@ -112,10 +124,36 @@ export async function strict_output(
             if (!choices.includes(output[index][key]) && default_category) {
               output[index][key] = default_category;
             }
-            if (output[index][key].includes(":")) {
+            if (
+              typeof output[index][key] === "string" &&
+              output[index][key].includes(":")
+            ) {
               output[index][key] = output[index][key].split(":")[0];
             }
           }
+        }
+
+        // ✅ Extra handling for MCQ
+        if ("options" in output[index]) {
+          let opts = Array.isArray(output[index].options)
+            ? output[index].options.map((o: string) => o.trim())
+            : [];
+
+          // Deduplicate
+          opts = [...new Set(opts)];
+
+          // Trim/pad to exactly 4
+          if (opts.length > 4) opts = opts.slice(0, 4);
+          while (opts.length < 4) {
+            opts.push(`Option ${opts.length + 1}`);
+          }
+
+          // Ensure answer is included
+          if (output[index].answer && !opts.includes(output[index].answer)) {
+            opts[opts.length - 1] = output[index].answer;
+          }
+
+          output[index].options = opts;
         }
 
         if (output_value_only) {
@@ -128,9 +166,20 @@ export async function strict_output(
 
       return list_input ? output : output[0];
     } catch (e: any) {
-      error_msg = `\n\nError: ${e.message}`;
       console.error(`Attempt ${i + 1} failed:`, e);
-      if (verbose) console.error("Raw error:", e);
+
+      if (e.status === 503 || e.message?.includes("overloaded")) {
+        const waitTime = Math.pow(2, i) * 500;
+        console.log(`Waiting ${waitTime}ms before retry...`);
+        await delay(waitTime);
+        if (i === num_tries - 2) {
+          console.log("Switching to fallback model: gemini-2.0-pro");
+          model = "gemini-2.0-pro";
+        }
+        continue;
+      }
+
+      error_msg = `\n\nError: ${e.message}`;
     }
   }
 

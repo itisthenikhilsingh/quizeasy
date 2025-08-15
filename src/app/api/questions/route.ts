@@ -1,5 +1,4 @@
 import { strict_output } from "@/lib/gpt";
-import { getAuthSession } from "@/lib/nextauth";
 
 import { quizCreationSchema } from "@/schemas/form/quiz";
 
