@@ -59,12 +59,6 @@ This full-stack build showcases App Router patterns, type-safe data access, form
 - **Create Game**: spawns a playable session from a quiz
 - **Check Answer**: validates responses and updates results
 
-## Pastebins
-Reference materials used while building (no code reproduced here):
-- prisma db.ts file: https://pastebin.com/hYYzuFY9
-- schema.prisma template: https://pastebin.com/S325fZ4P
-- lib/gpt.ts: https://pastebin.com/EiggjLeq
-
 
 ## License
 Choose and include a suitable license for your project repository.
