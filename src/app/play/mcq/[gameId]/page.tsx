@@ -4,16 +4,12 @@ import { getAuthSession } from "@/lib/nextauth";
 import { redirect } from "next/navigation";
 import React from "react";
 
-// Next.js automatically injects `params` for dynamic routes.
-// No need to define a conflicting `Props` type.
-interface PageProps {
-  params: {
-    gameId: string;
-  };
-}
-
-// This is a Server Component.
-const MCQPage = async ({ params }: PageProps) => {
+// No custom PageProps to avoid type conflicts
+const MCQPage = async ({
+  params,
+}: {
+  params: { gameId: string };
+}) => {
   const { gameId } = params;
 
   const session = await getAuthSession();
@@ -24,7 +20,7 @@ const MCQPage = async ({ params }: PageProps) => {
   const game = await prisma.game.findUnique({
     where: {
       id: gameId,
-      userId: session.user.id, // Ensure ownership
+      userId: session.user.id, // ensure ownership
     },
     include: {
       questions: {
