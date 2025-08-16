@@ -38,11 +38,31 @@ export async function POST(req: Request) {
       update: { count: { increment: 1 } },
     });
 
-    // Get questions from your external API
-    const { data } = await axios.post(
-      `${process.env.API_URL as string}/api/questions`,
-      { amount, topic, type }
-    );
+    // Try POST first, fallback to GET if API rejects it
+    let data;
+    try {
+      const url = `${process.env.API_URL as string}/api/questions`;
+      console.log("➡️ Fetching questions (POST):", url, { amount, topic, type });
+
+      const response = await axios.post(url, { amount, topic, type });
+      data = response.data;
+    } catch (err: any) {
+      if (err.response?.status === 405) {
+        const url = `${process.env.API_URL as string}/api/questions`;
+        console.warn("⚠️ POST not allowed, retrying with GET:", url, {
+          amount,
+          topic,
+          type,
+        });
+
+        const response = await axios.get(url, {
+          params: { amount, topic, type },
+        });
+        data = response.data;
+      } else {
+        throw err;
+      }
+    }
 
     // Save questions depending on type
     if (prismaGameType === "mcq") {
@@ -84,7 +104,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ gameId: game.id }, { status: 200 });
   } catch (error: any) {
-    console.error("Error creating game:", error);
+    console.error("❌ Error creating game:", error);
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 });
     }
@@ -115,6 +135,8 @@ export async function GET(req: Request) {
       );
     }
 
+    console.log("🔍 Fetching game with ID:", gameId);
+
     const game = await prisma.game.findUnique({
       where: { id: gameId },
       include: { questions: true },
@@ -126,7 +148,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ game }, { status: 200 });
   } catch (error: any) {
-    console.error("Error fetching game:", error);
+    console.error("❌ Error fetching game:", error);
     return NextResponse.json(
       { error: error.message || "Internal Server Error" },
       { status: 500 }
