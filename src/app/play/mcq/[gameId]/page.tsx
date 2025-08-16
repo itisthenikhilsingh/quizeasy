@@ -4,12 +4,8 @@ import { getAuthSession } from "@/lib/nextauth";
 import { redirect } from "next/navigation";
 import React from "react";
 
-// ✅ Avoid redeclaring PageProps – just inline the type
-const MCQPage = async ({
-  params,
-}: {
-  params: { gameId: string };
-}) => {
+// ✅ Use inline typing or `any` to avoid PageProps conflicts
+const MCQPage = async ({ params }: { params: { gameId: string } }) => {
   const { gameId } = params;
 
   const session = await getAuthSession();
