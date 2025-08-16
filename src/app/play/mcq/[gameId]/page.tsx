@@ -4,7 +4,7 @@ import { getAuthSession } from "@/lib/nextauth";
 import { redirect } from "next/navigation";
 import React from "react";
 
-// No custom PageProps to avoid type conflicts
+// ✅ Avoid redeclaring PageProps – just inline the type
 const MCQPage = async ({
   params,
 }: {
@@ -20,7 +20,7 @@ const MCQPage = async ({
   const game = await prisma.game.findUnique({
     where: {
       id: gameId,
-      userId: session.user.id, // ensure ownership
+      userId: session.user.id, // secure ownership
     },
     include: {
       questions: {
