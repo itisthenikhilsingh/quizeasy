@@ -4,21 +4,23 @@ import { getAuthSession } from "@/lib/nextauth";
 import { redirect } from "next/navigation";
 import React from "react";
 
-type Props = {
+// Correct type for Next.js dynamic route
+interface PageProps {
   params: {
     gameId: string;
   };
-};
+}
 
-const OpenEndedPage = async ({ params: { gameId } }: Props) => {
+const OpenEndedPage = async ({ params: { gameId } }: PageProps) => {
   const session = await getAuthSession();
   if (!session?.user) {
-    return redirect("/");
+    redirect("/");
   }
 
   const game = await prisma.game.findUnique({
     where: {
       id: gameId,
+      userId: session.user.id, // 🔒 ensure only the owner can access
     },
     include: {
       questions: {
@@ -30,9 +32,12 @@ const OpenEndedPage = async ({ params: { gameId } }: Props) => {
       },
     },
   });
-  if (!game || game.gameType === "mcq") {
-    return redirect("/quiz");
+
+  // ✅ Ensure it's not MCQ (must be open-ended)
+  if (!game || game.gameType !== "open_ended") {
+    redirect("/quiz");
   }
+
   return <OpenEnded game={game} />;
 };
 
